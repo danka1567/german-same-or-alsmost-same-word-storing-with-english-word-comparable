@@ -35,6 +35,8 @@ if 'search_results' not in st.session_state:
     st.session_state.search_results = []
 if 'gsheets_connected' not in st.session_state:
     st.session_state.gsheets_connected = False
+if 'spreadsheet_created' not in st.session_state:
+    st.session_state.spreadsheet_created = False
 
 # ---------- Google Sheets Helper Functions ----------
 
@@ -71,7 +73,7 @@ def get_google_sheets_client():
         return None
 
 def get_or_create_spreadsheet():
-    """Get existing spreadsheet or create a new one"""
+    """Get existing spreadsheet or create a new one automatically"""
     client = get_google_sheets_client()
     if not client:
         return None
@@ -79,16 +81,20 @@ def get_or_create_spreadsheet():
     try:
         # Try to open existing spreadsheet
         spreadsheet = client.open(SPREADSHEET_NAME)
-        st.success(f"✅ Connected to existing spreadsheet: {SPREADSHEET_NAME}")
+        if not st.session_state.spreadsheet_created:
+            st.success(f"✅ Connected to existing spreadsheet: '{SPREADSHEET_NAME}'")
         return spreadsheet
         
     except gspread.SpreadsheetNotFound:
         try:
             # Create new spreadsheet if it doesn't exist
-            spreadsheet = client.create(SPREADSHEET_NAME)
-            # Share with the service account email for full access
-            spreadsheet.share(SERVICE_ACCOUNT_INFO['client_email'], perm_type='user', role='writer')
-            st.success(f"✅ Created new spreadsheet: {SPREADSHEET_NAME}")
+            with st.spinner(f"🔄 Creating new spreadsheet '{SPREADSHEET_NAME}'..."):
+                spreadsheet = client.create(SPREADSHEET_NAME)
+                # Share with the service account email for full access
+                spreadsheet.share(SERVICE_ACCOUNT_INFO['client_email'], perm_type='user', role='writer')
+                st.session_state.spreadsheet_created = True
+                st.success(f"✅ Successfully created new spreadsheet: '{SPREADSHEET_NAME}'")
+                st.info("📊 The spreadsheet has been automatically created in Google Drive")
             return spreadsheet
         except Exception as e:
             st.error(f"❌ Failed to create spreadsheet: {str(e)}")
@@ -98,7 +104,7 @@ def get_or_create_spreadsheet():
         return None
 
 def get_worksheet():
-    """Get or create the worksheet"""
+    """Get or create the worksheet automatically"""
     spreadsheet = get_or_create_spreadsheet()
     if not spreadsheet:
         return None
@@ -108,10 +114,12 @@ def get_worksheet():
         return worksheet
     except gspread.WorksheetNotFound:
         try:
-            # Create worksheet with headers
-            worksheet = spreadsheet.add_worksheet(WORKSHEET_NAME, rows=1000, cols=4)
-            worksheet.append_row(["German", "English", "DateAdded", "DateObj"])
-            st.success(f"✅ Created new worksheet: {WORKSHEET_NAME}")
+            # Create worksheet with headers if it doesn't exist
+            with st.spinner(f"🔄 Creating worksheet '{WORKSHEET_NAME}'..."):
+                worksheet = spreadsheet.add_worksheet(WORKSHEET_NAME, rows=1000, cols=4)
+                worksheet.append_row(["German", "English", "DateAdded", "DateObj"])
+                st.success(f"✅ Created new worksheet: '{WORKSHEET_NAME}'")
+                st.info("📋 Worksheet has been created with proper headers")
             return worksheet
         except Exception as e:
             st.error(f"❌ Failed to create worksheet: {str(e)}")
@@ -520,14 +528,26 @@ def main():
     
     st.title("🇩🇪 German Words Manager - Google Sheets")
     
+    # Initialize connection on first load
+    if not st.session_state.gsheets_connected:
+        with st.spinner("🔗 Connecting to Google Sheets..."):
+            get_google_sheets_client()
+    
     # Connection status
     if not st.session_state.gsheets_connected:
-        st.warning("🔴 Not connected to Google Sheets")
-        if st.button("🔄 Try to Connect"):
-            get_google_sheets_client()
+        st.error("🔴 Not connected to Google Sheets")
+        st.info("""
+        **To fix connection issues:**
+        1. Ensure **Google Sheets API** and **Google Drive API** are enabled in Google Cloud Console
+        2. The app will automatically create the spreadsheet when you first use it
+        """)
+        
+        if st.button("🔄 Retry Connection"):
             st.rerun()
     else:
         st.success("🟢 Connected to Google Sheets")
+        if st.session_state.spreadsheet_created:
+            st.info("📊 Spreadsheet was automatically created - you can find it in your Google Drive")
     
     st.markdown("---")
     
@@ -599,23 +619,17 @@ def main():
     
     # Sidebar with information
     with st.sidebar:
-        st.header("ℹ️ Setup Instructions")
+        st.header("ℹ️ Automatic Setup")
         st.markdown("""
-        **To fix connection issues:**
+        **This app automatically:**
+        - ✅ Creates spreadsheet if not found
+        - ✅ Creates worksheet with headers
+        - ✅ Sets up proper structure
+        - ✅ Shares with service account
         
-        1. **Enable APIs in Google Cloud Console:**
-           - Go to [Google Cloud Console](https://console.cloud.google.com/)
-           - Enable **Google Sheets API** and **Google Drive API**
+        **No manual setup required!**
         
-        2. **Create and share spreadsheet:**
-           - Create a Google Sheet named **'German Words Database'**
-           - Share it with this email: 
-           `german-english-similar-or--775@third-zephyr-451003-n6.iam.gserviceaccount.com`
-           - Give **Editor** permissions
-        
-        3. **Check service account:**
-           - Ensure the service account is active
-           - Verify the private key is correct
+        Just use the app and everything will be created automatically in your Google Drive.
         """)
         
         # Statistics
@@ -624,6 +638,10 @@ def main():
                 data = read_csv_data()
                 st.metric("Total Words in Google Sheets", len(data))
                 st.metric("New This Session", len(st.session_state.session_new_words))
+                
+                if st.session_state.spreadsheet_created:
+                    st.success("✨ Spreadsheet created automatically!")
+                
             except:
                 st.warning("Could not load data from Google Sheets")
         else:
