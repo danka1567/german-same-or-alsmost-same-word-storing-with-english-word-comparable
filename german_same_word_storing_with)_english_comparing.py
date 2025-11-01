@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import os
@@ -7,13 +6,13 @@ from datetime import datetime
 import time
 import requests
 import base64
-import json
 
-# GitHub Configuration
+# GitHub Configuration - Using your existing repository and file
 GITHUB_TOKEN = "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"
-REPO_OWNER = "your_username"  # Change this to your GitHub username
-REPO_NAME = "german-words-db"  # Change this to your repository name
+REPO_OWNER = "danka1567"
+REPO_NAME = "german-same-or-alsmost-same-word-storing-with-english-word-comparable"
 FILE_PATH = "similar or partial GERMAN english.csv"
+RAW_CSV_URL = f"https://raw.githubusercontent.com/{REPO_OWNER}/{REPO_NAME}/main/{FILE_PATH.replace(' ', '%20')}"
 
 # Initialize session state variables
 if 'session_new_words' not in st.session_state:
@@ -34,143 +33,91 @@ def get_github_headers():
         "Accept": "application/vnd.github.v3+json"
     }
 
-def check_repo_exists():
-    """Check if repository exists, create if it doesn't"""
-    url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}"
+def get_file_sha():
+    """Get the SHA of the current file for updates"""
+    url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/contents/{FILE_PATH.replace(' ', '%20')}"
     response = requests.get(url, headers=get_github_headers())
     
-    if response.status_code == 404:
-        # Repository doesn't exist, create it
-        create_data = {
-            "name": REPO_NAME,
-            "description": "German Words Database",
-            "private": True,  # Make it private for security
-            "auto_init": True  # Initialize with README
-        }
-        create_response = requests.post(
-            "https://api.github.com/user/repos",
-            headers=get_github_headers(),
-            json=create_data
-        )
-        return create_response.status_code == 201
-    elif response.status_code == 200:
-        return True
+    if response.status_code == 200:
+        return response.json()['sha']
     else:
-        st.error(f"Error checking repository: {response.status_code}")
-        return False
-
-def check_file_exists():
-    """Check if the CSV file exists in the repository"""
-    url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/contents/{FILE_PATH}"
-    response = requests.get(url, headers=get_github_headers())
-    return response.status_code == 200
-
-def create_initial_file():
-    """Create initial CSV file with headers"""
-    headers = "German,English,DateAdded,DateObj\n"
-    content = base64.b64encode(headers.encode()).decode()
-    
-    data = {
-        "message": "Initialize German Words Database",
-        "content": content
-    }
-    
-    url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/contents/{FILE_PATH}"
-    response = requests.put(url, headers=get_github_headers(), json=data)
-    
-    return response.status_code == 201
-
-def initialize_github():
-    """Initialize GitHub connection and create necessary files"""
-    try:
-        # Check and create repository
-        if not check_repo_exists():
-            st.error("Failed to create repository")
-            return False
-        
-        # Check and create file
-        if not check_file_exists():
-            if not create_initial_file():
-                st.error("Failed to create initial file")
-                return False
-            st.success("✅ Created new German Words database file")
-        
-        st.session_state.github_connected = True
-        return True
-        
-    except Exception as e:
-        st.error(f"GitHub initialization failed: {str(e)}")
-        return False
+        st.error(f"Failed to get file SHA: {response.status_code}")
+        return None
 
 def read_csv_from_github():
-    """Read CSV data from GitHub"""
-    if not st.session_state.github_connected:
-        return []
-    
+    """Read CSV data directly from GitHub raw URL"""
     try:
-        url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/contents/{FILE_PATH}"
-        response = requests.get(url, headers=get_github_headers())
-        
-        if response.status_code != 200:
-            st.error(f"Failed to read file: {response.status_code}")
-            return []
-        
-        file_data = response.json()
-        content = base64.b64decode(file_data['content']).decode('utf-8')
-        
-        # Parse CSV content
-        data = []
-        lines = content.strip().split('\n')
-        if len(lines) <= 1:  # Only headers or empty
-            return []
-        
-        # Skip header row
-        for line in lines[1:]:
-            if not line.strip():
-                continue
-            parts = line.split(',')
-            if len(parts) >= 4:
+        response = requests.get(RAW_CSV_URL)
+        if response.status_code == 200:
+            # Read the CSV content
+            from io import StringIO
+            csv_content = response.text
+            df = pd.read_csv(StringIO(csv_content))
+            
+            # Convert DataFrame to our expected format
+            data = []
+            for _, row in df.iterrows():
+                german = row.get('German') or row.get('Word', '')
+                english = row.get('English', '')
+                date_added = row.get('DateAdded', '')
+                date_obj_str = row.get('DateObj', '')
+                
+                # Handle DateObj conversion
+                try:
+                    if date_obj_str and pd.notna(date_obj_str):
+                        date_obj = datetime.strptime(str(date_obj_str), "%Y-%m-%d %H:%M:%S")
+                    else:
+                        date_obj = datetime.now()
+                except:
+                    date_obj = datetime.now()
+                
                 data.append({
-                    'German': parts[0],
-                    'English': parts[1],
-                    'DateAdded': parts[2],
-                    'DateObj': parts[3]
+                    'German': german,
+                    'English': english,
+                    'DateAdded': date_added,
+                    'DateObj': date_obj
                 })
-        
-        return data
-        
+            
+            st.session_state.github_connected = True
+            return data
+        else:
+            st.error(f"Failed to read CSV file: {response.status_code}")
+            return []
+            
     except Exception as e:
         st.error(f"Error reading from GitHub: {e}")
         return []
 
 def write_csv_to_github(data):
-    """Write CSV data to GitHub"""
-    if not st.session_state.github_connected:
-        return False
-    
+    """Write CSV data back to GitHub"""
     try:
-        # Get current file SHA (required for update)
-        url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/contents/{FILE_PATH}"
-        response = requests.get(url, headers=get_github_headers())
-        
-        if response.status_code != 200:
-            st.error("Failed to get file SHA")
+        # Get current file SHA
+        sha = get_file_sha()
+        if not sha:
             return False
         
-        file_data = response.json()
-        sha = file_data['sha']
-        
-        # Prepare CSV content
-        csv_content = "German,English,DateAdded,DateObj\n"
+        # Convert data to DataFrame
+        df_data = []
         for item in data:
-            csv_content += f"{item['German']},{item['English']},{item['DateAdded']},{item['DateObj']}\n"
+            df_data.append({
+                'German': item['German'],
+                'English': item['English'],
+                'DateAdded': item['DateAdded'],
+                'DateObj': item['DateObj']
+            })
+        
+        df = pd.DataFrame(df_data)
+        
+        # Convert DataFrame to CSV string
+        csv_content = df.to_csv(index=False)
         
         # Encode content
         content = base64.b64encode(csv_content.encode()).decode()
         
         # Update file
+        url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/contents/{FILE_PATH.replace(' ', '%20')}"
         update_data = {
-            "message": f"Update German words database - {len(data)} words",
+            "message": f"Update German words - {len(data)} total words",
             "content": content,
             "sha": sha
         }
@@ -178,6 +125,7 @@ def write_csv_to_github(data):
         response = requests.put(url, headers=get_github_headers(), json=update_data)
         
         if response.status_code == 200:
+            st.success("✅ Successfully updated GitHub repository!")
             return True
         else:
             st.error(f"Failed to update file: {response.status_code}")
@@ -256,7 +204,7 @@ def time_ago(past_time):
     return f"{ago} | {tod}"
 
 def load_existing_words():
-    """Load words from GitHub"""
+    """Load words from GitHub CSV"""
     data = read_csv_from_github()
     existing_words = {}
     
@@ -265,16 +213,10 @@ def load_existing_words():
         if not german:
             continue
         
-        date_obj_str = row.get('DateObj', '')
-        try:
-            date_obj = datetime.strptime(date_obj_str, "%Y-%m-%d %H:%M:%S") if date_obj_str else datetime.now()
-        except:
-            date_obj = datetime.now()
-        
         existing_words[german] = {
             'English': row.get('English', ''),
             'DateAdded': row.get('DateAdded', ''),
-            'DateObj': date_obj
+            'DateObj': row.get('DateObj')
         }
     
     return existing_words
@@ -317,7 +259,7 @@ def read_csv_data():
     return read_csv_from_github()
 
 def search_words(words):
-    """Search for words in GitHub"""
+    """Search for words in GitHub CSV"""
     existing_words = load_existing_words()
     results = []
     
@@ -338,7 +280,7 @@ def search_words(words):
     return results
 
 def delete_word_from_csv(word_or_index):
-    """Delete word from GitHub"""
+    """Delete word from GitHub CSV"""
     current_data = read_csv_from_github()
     updated_data = []
     deleted = False
@@ -360,7 +302,7 @@ def delete_word_from_csv(word_or_index):
     return deleted
 
 def edit_word_in_csv(search_word, new_german, new_english):
-    """Edit word in GitHub"""
+    """Edit word in GitHub CSV"""
     current_data = read_csv_from_github()
     edited = False
     
@@ -513,10 +455,11 @@ def main():
     
     st.title("🇩🇪 German Words Manager - GitHub Database")
     
-    # Initialize GitHub connection on first load
+    # Test connection on startup
     if not st.session_state.github_connected:
         with st.spinner("🔗 Connecting to GitHub..."):
-            if initialize_github():
+            test_data = read_csv_from_github()
+            if test_data:
                 st.success("✅ Connected to GitHub successfully!")
             else:
                 st.error("❌ Failed to connect to GitHub")
@@ -527,7 +470,7 @@ def main():
         st.info("""
         **Please check:**
         1. GitHub token is valid
-        2. Repository name and owner are correct
+        2. File exists at: https://github.com/danka1567/german-same-or-alsmost-same-word-storing-with-english-word-comparable/blob/main/similar%20or%20partial%20GERMAN%20english.csv
         3. You have internet connection
         """)
         
@@ -607,16 +550,14 @@ def main():
     # Sidebar with information
     with st.sidebar:
         st.header("ℹ️ GitHub Database")
-        st.markdown("""
-        **Features:**
-        - ✅ Automatic repository creation
-        - ✅ Automatic file initialization  
-        - ✅ Real-time GitHub synchronization
-        - ✅ Private repository for security
-        - ✅ No API limits to worry about
+        st.markdown(f"""
+        **Connected to your existing repository:**
+        - **Repository:** [{REPO_NAME}](https://github.com/{REPO_OWNER}/{REPO_NAME})
+        - **File:** [{FILE_PATH}]({RAW_CSV_URL})
+        - **Real-time synchronization**
+        - **Automatic version control**
         
-        **Repository:** `german-words-db`
-        **File:** `similar or partial GERMAN english.csv`
+        **All changes are saved directly to your GitHub repository!**
         """)
         
         # Statistics
@@ -625,7 +566,13 @@ def main():
                 data = read_csv_data()
                 st.metric("Total Words in GitHub", len(data))
                 st.metric("New This Session", len(st.session_state.session_new_words))
-            except:
+                
+                # Show some file info
+                if data:
+                    latest_word = data[-1]['German'] if data else "None"
+                    st.write(f"**Latest word:** {latest_word}")
+                    
+            except Exception as e:
                 st.warning("Could not load data from GitHub")
         else:
             st.warning("Not connected to GitHub")
