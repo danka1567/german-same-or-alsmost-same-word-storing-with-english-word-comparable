@@ -1,3 +1,4 @@
+
 import streamlit as st
 import pandas as pd
 import os
@@ -7,7 +8,7 @@ import time
 import requests
 import base64
 
-# GitHub Configuration - Using your existing repository and file
+# GitHub Configuration
 GITHUB_TOKEN = "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"
 REPO_OWNER = "danka1567"
 REPO_NAME = "german-same-or-alsmost-same-word-storing-with-english-word-comparable"
@@ -27,14 +28,12 @@ if 'github_connected' not in st.session_state:
 # ---------- GitHub Helper Functions ----------
 
 def get_github_headers():
-    """Get headers for GitHub API requests"""
     return {
         "Authorization": f"token {GITHUB_TOKEN}",
         "Accept": "application/vnd.github.v3+json"
     }
 
 def get_file_sha():
-    """Get the SHA of the current file for updates"""
     url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/contents/{FILE_PATH.replace(' ', '%20')}"
     response = requests.get(url, headers=get_github_headers())
     
@@ -45,16 +44,13 @@ def get_file_sha():
         return None
 
 def read_csv_from_github():
-    """Read CSV data directly from GitHub raw URL"""
     try:
         response = requests.get(RAW_CSV_URL)
         if response.status_code == 200:
-            # Read the CSV content
             from io import StringIO
             csv_content = response.text
             df = pd.read_csv(StringIO(csv_content))
             
-            # Convert DataFrame to our expected format
             data = []
             for _, row in df.iterrows():
                 german = row.get('German') or row.get('Word', '')
@@ -62,7 +58,6 @@ def read_csv_from_github():
                 date_added = row.get('DateAdded', '')
                 date_obj_str = row.get('DateObj', '')
                 
-                # Handle DateObj conversion
                 try:
                     if date_obj_str and pd.notna(date_obj_str):
                         date_obj = datetime.strptime(str(date_obj_str), "%Y-%m-%d %H:%M:%S")
@@ -89,14 +84,11 @@ def read_csv_from_github():
         return []
 
 def write_csv_to_github(data):
-    """Write CSV data back to GitHub"""
     try:
-        # Get current file SHA
         sha = get_file_sha()
         if not sha:
             return False
         
-        # Convert data to DataFrame
         df_data = []
         for item in data:
             df_data.append({
@@ -107,14 +99,9 @@ def write_csv_to_github(data):
             })
         
         df = pd.DataFrame(df_data)
-        
-        # Convert DataFrame to CSV string
         csv_content = df.to_csv(index=False)
-        
-        # Encode content
         content = base64.b64encode(csv_content.encode()).decode()
         
-        # Update file
         url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/contents/{FILE_PATH.replace(' ', '%20')}"
         update_data = {
             "message": f"Update German words - {len(data)} total words",
@@ -125,7 +112,6 @@ def write_csv_to_github(data):
         response = requests.put(url, headers=get_github_headers(), json=update_data)
         
         if response.status_code == 200:
-            st.success("✅ Successfully updated GitHub repository!")
             return True
         else:
             st.error(f"Failed to update file: {response.status_code}")
@@ -142,32 +128,28 @@ def clean_word(word):
     return word_clean.capitalize() if word_clean else ""
 
 def get_time_of_day(hour, minute=0):
-    if 5 <= hour < 6:
-        return "Dawn (Day)"
-    elif 6 <= hour < 9:
-        return "Morning (Day)"
-    elif 9 <= hour < 12:
-        return "Late Morning (Day)"
-    elif 12 <= hour < 15:
-        return "Afternoon (Day)"
-    elif 15 <= hour < 18:
-        return "Late Afternoon (Day)"
-    elif 18 <= hour < 19:
-        return "Sunset (Night)"
-    elif 19 <= hour < 20:
-        return "Twilight (Night)"
-    elif 20 <= hour < 23:
-        return "Evening (Night)"
-    elif 23 <= hour or hour < 0:
-        return "Midnight (Night)"
-    elif 0 <= hour < 5:
-        return "Night (Night)"
-    else:
-        return "Daytime (Day)"
+    time_mapping = {
+        (5, 6): "🌅 Dawn (Day)",
+        (6, 9): "☀️ Morning (Day)",
+        (9, 12): "🌞 Late Morning (Day)",
+        (12, 15): "🏙️ Afternoon (Day)",
+        (15, 18): "🌇 Late Afternoon (Day)",
+        (18, 19): "🌆 Sunset (Night)",
+        (19, 20): "🌃 Twilight (Night)",
+        (20, 23): "🌙 Evening (Night)",
+        (23, 0): "🌌 Midnight (Night)",
+        (0, 5): "🌠 Night (Night)"
+    }
+    
+    for (start, end), description in time_mapping.items():
+        if start <= hour < end or (start == 23 and hour >= 23) or (end == 0 and hour < 5):
+            return description
+    return "☀️ Daytime (Day)"
 
 def custom_timestamp():
     now = datetime.now()
-    months = ["jano","febo","maro","apro","maio","juno","julo","augo","sepo","octo","nove","deco"]
+    months = ["🌸 Jan", "❄️ Feb", "🌱 Mar", "🌷 Apr", "🌞 May", "🌻 Jun", 
+              "🏖️ Jul", "🌊 Aug", "🍂 Sep", "🎃 Oct", "🍁 Nov", "🎄 Dec"]
     month_custom = months[now.month - 1]
     weekday = now.strftime("%A")
     hour = now.hour
@@ -175,7 +157,7 @@ def custom_timestamp():
     am_pm = "AM" if hour < 12 else "PM"
     hour_12 = hour % 12 or 12
     tod = get_time_of_day(hour, minute)
-    timestamp_str = f"{now.day} {month_custom} {now.year} : {weekday} {hour_12}:{minute:02d} {am_pm} {tod}"
+    timestamp_str = f"{now.day} {month_custom} {now.year} | {weekday} {hour_12}:{minute:02d} {am_pm} | {tod}"
     return timestamp_str, now
 
 def time_ago(past_time):
@@ -183,28 +165,32 @@ def time_ago(past_time):
         try:
             past_time = datetime.strptime(past_time, "%Y-%m-%d %H:%M:%S")
         except:
-            return "Unknown time ago"
+            return "⏳ Unknown time ago"
     
     now = datetime.now()
     diff = now - past_time
     seconds = diff.total_seconds()
+    
     if seconds < 60:
-        ago = f"{int(seconds)} seconds ago"
+        ago = f"🕐 {int(seconds)} seconds ago"
     elif seconds < 3600:
-        ago = f"{int(seconds//60)} minutes ago"
+        ago = f"🕑 {int(seconds//60)} minutes ago"
     elif seconds < 86400:
-        ago = f"{int(seconds//3600)} hours ago"
+        ago = f"🕒 {int(seconds//3600)} hours ago"
     else:
-        ago = f"{int(seconds//86400)} days ago"
+        days = int(seconds//86400)
+        if days == 1:
+            ago = f"📅 {days} day ago"
+        else:
+            ago = f"📅 {days} days ago"
     
     if isinstance(past_time, datetime):
         tod = get_time_of_day(past_time.hour, past_time.minute)
     else:
-        tod = "Unknown"
+        tod = "⏰ Unknown"
     return f"{ago} | {tod}"
 
 def load_existing_words():
-    """Load words from GitHub CSV"""
     data = read_csv_from_github()
     existing_words = {}
     
@@ -222,7 +208,6 @@ def load_existing_words():
     return existing_words
 
 def save_word_pairs(pairs):
-    """Save word pairs to GitHub"""
     existing_words = load_existing_words()
     current_data = read_csv_from_github()
     new_entries = []
@@ -245,21 +230,17 @@ def save_word_pairs(pairs):
     if not new_entries:
         return []
     
-    # Add new entries to current data
     updated_data = current_data + new_entries
     
-    # Write back to GitHub
     if write_csv_to_github(updated_data):
         return new_entries
     else:
         return []
 
 def read_csv_data():
-    """Read all data from GitHub"""
     return read_csv_from_github()
 
 def search_words(words):
-    """Search for words in GitHub CSV"""
     existing_words = load_existing_words()
     results = []
     
@@ -275,12 +256,11 @@ def search_words(words):
                     'TimeAgo': time_ago(entry['DateObj'])
                 })
             else:
-                results.append({'German': clean, 'English': '', 'DateAdded': "Not Found", 'TimeAgo': ""})
+                results.append({'German': clean, 'English': '❌ Not Found', 'DateAdded': "🚫", 'TimeAgo': ""})
     
     return results
 
 def delete_word_from_csv(word_or_index):
-    """Delete word from GitHub CSV"""
     current_data = read_csv_from_github()
     updated_data = []
     deleted = False
@@ -302,7 +282,6 @@ def delete_word_from_csv(word_or_index):
     return deleted
 
 def edit_word_in_csv(search_word, new_german, new_english):
-    """Edit word in GitHub CSV"""
     current_data = read_csv_from_github()
     edited = False
     
@@ -323,7 +302,85 @@ def edit_word_in_csv(search_word, new_german, new_english):
     
     return edited
 
-# ---------- Streamlit UI Functions ----------
+# ---------- Beautiful UI Functions ----------
+
+def display_data(data):
+    if not data:
+        st.info("🎯 No words to display. Start by adding some German-English pairs!")
+        return
+    
+    df_data = []
+    for item in data:
+        df_data.append({
+            '🇩🇪 German': item['German'],
+            '🇬🇧 English': item.get('English', ''),
+            '📅 Date Added': item['DateAdded'],
+            '⏰ Time Ago': item.get('TimeAgo', time_ago(item['DateObj']) if 'DateObj' in item else "")
+        })
+    
+    df = pd.DataFrame(df_data)
+    
+    # Beautiful styling with gradients and colors
+    styled_df = df.style.set_properties(**{
+        'background-color': '#0f1116',
+        'color': '#ffffff',
+        'border': '1px solid #2d3746',
+        'text-align': 'center',
+        'font-weight': 'bold',
+        'font-family': 'Arial, sans-serif'
+    }).set_table_styles([
+        {'selector': 'thead th', 
+         'props': [
+             ('background', 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'),
+             ('color', 'white'),
+             ('font-weight', 'bold'),
+             ('font-size', '14px'),
+             ('border', '2px solid #4a5568'),
+             ('text-align', 'center')
+         ]},
+        {'selector': 'tbody tr:nth-child(even)', 
+         'props': [('background-color', '#1a202c')]},
+        {'selector': 'tbody tr:nth-child(odd)', 
+         'props': [('background-color', '#2d3748')]},
+        {'selector': 'tbody tr:hover', 
+         'props': [('background-color', '#4a5568')]},
+        {'selector': 'td', 
+         'props': [('border', '1px solid #4a5568')]}
+    ])
+    
+    st.dataframe(styled_df, use_container_width=True, height=400)
+
+def create_gradient_text(text, size=24):
+    return f"""
+    <h1 style='
+        background: linear-gradient(45deg, #FF6B6B, #4ECDC4, #45B7D1, #96CEB4, #FFEAA7);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        font-size: {size}px;
+        font-weight: bold;
+        text-align: center;
+        margin-bottom: 20px;
+    '>{text}</h1>
+    """
+
+def create_feature_card(icon, title, description, color):
+    return f"""
+    <div style='
+        background: {color};
+        padding: 20px;
+        border-radius: 15px;
+        margin: 10px 0;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        border-left: 5px solid #ffffff;
+    '>
+        <h3 style='color: white; margin: 0; font-size: 18px;'>
+            {icon} {title}
+        </h3>
+        <p style='color: #e2e8f0; margin: 5px 0 0 0; font-size: 14px;'>
+            {description}
+        </p>
+    </div>
+    """
 
 def show_all_words():
     data = read_csv_data()
@@ -340,40 +397,6 @@ def find_words(search_text):
     results = search_words(words_list)
     st.session_state.search_results = results
     display_data(results)
-
-def display_data(data):
-    if not data:
-        st.info("No words to display.")
-        return
-    
-    df_data = []
-    for item in data:
-        df_data.append({
-            'German': item['German'],
-            'English': item.get('English', ''),
-            'Date Added': item['DateAdded'],
-            'Time Ago': item.get('TimeAgo', time_ago(item['DateObj']) if 'DateObj' in item else "")
-        })
-    
-    df = pd.DataFrame(df_data)
-    
-    # Apply custom styling
-    styled_df = df.style.set_properties(**{
-        'background-color': '#ffffff',
-        'color': '#2E4053',
-        'border-color': '#2196F3',
-        'text-align': 'center',
-        'font-weight': 'bold'
-    }).set_table_styles([
-        {'selector': 'thead th', 'props': [('background-color', '#2196F3'), 
-                                         ('color', 'white'), 
-                                         ('font-weight', 'bold'),
-                                         ('font-size', '14pt')]},
-        {'selector': 'tbody tr:nth-child(even)', 'props': [('background-color', '#e6f2ff')]},
-        {'selector': 'tbody tr:nth-child(odd)', 'props': [('background-color', '#ffffff')]}
-    ])
-    
-    st.dataframe(styled_df, use_container_width=True)
 
 def save_words_action(input_text):
     if not input_text.strip():
@@ -394,10 +417,10 @@ def save_words_action(input_text):
     
     new_entries = save_word_pairs(pairs)
     if new_entries:
-        st.success(f"✅ Successfully saved {len(new_entries)} new word pair(s) to GitHub!")
+        st.success(f"🎉 Successfully saved {len(new_entries)} new word pair(s) to GitHub!")
         show_new_words()
     else:
-        st.info("No new words were added (they might already exist).")
+        st.info("💡 No new words were added (they might already exist).")
 
 def delete_words_action(delete_text):
     if not delete_text.strip():
@@ -406,7 +429,7 @@ def delete_words_action(delete_text):
     
     deleted = delete_word_from_csv(delete_text)
     if deleted:
-        st.success(f"✅ '{delete_text}' deleted successfully from GitHub!")
+        st.success(f"🗑️ '{delete_text}' deleted successfully from GitHub!")
         show_all_words()
     else:
         st.error(f"❌ '{delete_text}' not found in GitHub database.")
@@ -416,46 +439,94 @@ def edit_words_action(edit_text):
         st.error("⚠️ Please enter the German word to edit.")
         return
     
-    # Create columns for input
     col1, col2 = st.columns(2)
     
     with col1:
-        new_german = st.text_input("New German word (leave blank to keep unchanged):", key="edit_german")
+        new_german = st.text_input("✏️ New German word (leave blank to keep unchanged):", key="edit_german")
     with col2:
-        new_english = st.text_input("New English word (leave blank to keep unchanged):", key="edit_english")
+        new_english = st.text_input("✏️ New English word (leave blank to keep unchanged):", key="edit_english")
     
-    if st.button("Confirm Edit", key="confirm_edit"):
+    if st.button("✅ Confirm Edit", key="confirm_edit", use_container_width=True):
         edited = edit_word_in_csv(edit_text, new_german.strip(), new_english.strip())
         if edited:
-            st.success(f"✅ '{edit_text}' edited successfully in GitHub!")
+            st.success(f"✨ '{edit_text}' edited successfully in GitHub!")
             show_all_words()
         else:
             st.error(f"❌ '{edit_text}' not found in GitHub database.")
 
-# ---------- Streamlit App Layout ----------
+# ---------- Beautiful Streamlit App Layout ----------
 
 def main():
     st.set_page_config(
-        page_title="German Words Manager - GitHub",
+        page_title="🇩🇪 German Words Master",
         page_icon="🇩🇪",
         layout="wide",
         initial_sidebar_state="expanded"
     )
     
-    # Custom CSS
+    # Custom CSS for beautiful styling
     st.markdown("""
-        <style>
-        .main { background-color: #f0f2f5; }
-        .stButton button { font-weight: bold; border-radius: 5px; }
-        .success-message { color: #4CAF50; }
-        .error-message { color: #E53935; }
-        .info-message { color: #2196F3; }
-        </style>
+    <style>
+    .main {
+        background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+        color: white;
+    }
+    
+    .stButton button {
+        background: linear-gradient(45deg, #FF6B6B, #4ECDC4);
+        color: white;
+        border: none;
+        border-radius: 10px;
+        padding: 10px 20px;
+        font-weight: bold;
+        transition: all 0.3s ease;
+    }
+    
+    .stButton button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+    }
+    
+    .stTextInput input, .stTextArea textarea {
+        background: #1a202c;
+        color: white;
+        border: 2px solid #4a5568;
+        border-radius: 10px;
+        padding: 10px;
+    }
+    
+    .stSuccess {
+        background: linear-gradient(45deg, #00b09b, #96c93d);
+        color: white;
+        padding: 10px;
+        border-radius: 10px;
+    }
+    
+    .stError {
+        background: linear-gradient(45deg, #ff416c, #ff4b2b);
+        color: white;
+        padding: 10px;
+        border-radius: 10px;
+    }
+    
+    .stInfo {
+        background: linear-gradient(45deg, #4facfe, #00f2fe);
+        color: white;
+        padding: 10px;
+        border-radius: 10px;
+    }
+    
+    .css-1d391kg {
+        background: #1a202c;
+    }
+    </style>
     """, unsafe_allow_html=True)
     
-    st.title("🇩🇪 German Words Manager - GitHub Database")
+    # Header with gradient text
+    st.markdown(create_gradient_text("🇩🇪 German Words Master", 36), unsafe_allow_html=True)
+    st.markdown("<p style='text-align: center; color: #cbd5e0; font-size: 18px;'>Beautiful German-English Vocabulary Manager</p>", unsafe_allow_html=True)
     
-    # Test connection on startup
+    # Connection status
     if not st.session_state.github_connected:
         with st.spinner("🔗 Connecting to GitHub..."):
             test_data = read_csv_from_github()
@@ -464,118 +535,124 @@ def main():
             else:
                 st.error("❌ Failed to connect to GitHub")
     
-    # Connection status
-    if not st.session_state.github_connected:
-        st.error("🔴 Not connected to GitHub")
-        st.info("""
-        **Please check:**
-        1. GitHub token is valid
-        2. File exists at: https://github.com/danka1567/german-same-or-alsmost-same-word-storing-with-english-word-comparable/blob/main/similar%20or%20partial%20GERMAN%20english.csv
-        3. You have internet connection
-        """)
-        
-        if st.button("🔄 Retry Connection"):
-            st.rerun()
-    else:
-        st.success("🟢 Connected to GitHub Database")
+    # Feature cards
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.markdown(create_feature_card("📝", "Add Words", "Easily add new German-English pairs", "linear-gradient(135deg, #667eea 0%, #764ba2 100%)"), unsafe_allow_html=True)
+    with col2:
+        st.markdown(create_feature_card("🔍", "Search & Find", "Quickly search through your vocabulary", "linear-gradient(135deg, #f093fb 0%, #f5576c 100%)"), unsafe_allow_html=True)
+    with col3:
+        st.markdown(create_feature_card("🔄", "Sync to GitHub", "Automatic cloud synchronization", "linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)"), unsafe_allow_html=True)
     
     st.markdown("---")
     
     # Section 1: Add New Words
-    st.header("📝 Add New German-English Word Pairs")
-    st.write("Enter German–English pairs (space or comma-separated, two words per pair):")
-    
-    input_text = st.text_area(
-        "Word Pairs Input",
-        placeholder="Example: Haus House, Katze Cat, Baum Tree",
-        key="word_input",
-        height=80
-    )
-    
-    col1, col2, col3 = st.columns([1, 1, 2])
-    with col1:
-        if st.button("💾 Save Words", use_container_width=True, disabled=not st.session_state.github_connected):
-            save_words_action(input_text)
-    with col2:
-        if st.button("🔄 Clear Input", use_container_width=True):
-            st.rerun()
-    
-    st.markdown("---")
-    
-    # Section 2: Search and Manage Words
-    st.header("🔍 Search and Manage Words")
-    st.write("Search / Edit / Delete German words (space-separated or row number):")
-    
-    search_text = st.text_input(
-        "Search/Edit/Delete Input",
-        placeholder="Enter word(s) or row number",
-        key="search_input"
-    )
-    
-    # Action buttons in columns
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        if st.button("🔍 Find Words", use_container_width=True, disabled=not st.session_state.github_connected):
-            find_words(search_text)
-    
-    with col2:
-        if st.button("📋 Show All Words", use_container_width=True, disabled=not st.session_state.github_connected):
-            show_all_words()
-    
-    with col3:
-        if st.button("🆕 Show New Words", use_container_width=True):
-            show_new_words()
-    
-    with col4:
-        if st.button("🗑️ Delete Word", use_container_width=True, disabled=not st.session_state.github_connected):
-            delete_words_action(search_text)
-    
-    # Edit section (appears when needed)
-    if search_text.strip():
-        st.markdown("---")
-        st.subheader("✏️ Edit Word")
-        edit_words_action(search_text)
+    with st.container():
+        st.markdown("### 📝 Add New Word Pairs")
+        st.write("Enter German–English pairs (space or comma-separated):")
+        
+        input_text = st.text_area(
+            "Word Pairs Input",
+            placeholder="Example: Haus House, Katze Cat, Baum Tree...",
+            key="word_input",
+            height=100
+        )
+        
+        col1, col2, col3 = st.columns([1, 1, 2])
+        with col1:
+            if st.button("💾 Save Words", use_container_width=True, disabled=not st.session_state.github_connected):
+                save_words_action(input_text)
+        with col2:
+            if st.button("🔄 Clear Input", use_container_width=True):
+                st.rerun()
     
     st.markdown("---")
     
-    # Display area for results
+    # Section 2: Search and Manage
+    with st.container():
+        st.markdown("### 🔍 Search & Manage Vocabulary")
+        st.write("Search, edit, or delete words:")
+        
+        search_text = st.text_input(
+            "Search Input",
+            placeholder="Enter German word, English word, or row number...",
+            key="search_input"
+        )
+        
+        # Action buttons in columns
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            if st.button("🔍 Find Words", use_container_width=True, disabled=not st.session_state.github_connected):
+                find_words(search_text)
+        with col2:
+            if st.button("📋 Show All", use_container_width=True, disabled=not st.session_state.github_connected):
+                show_all_words()
+        with col3:
+            if st.button("🆕 New Words", use_container_width=True):
+                show_new_words()
+        with col4:
+            if st.button("🗑️ Delete", use_container_width=True, disabled=not st.session_state.github_connected):
+                delete_words_action(search_text)
+        
+        # Edit section
+        if search_text.strip():
+            st.markdown("---")
+            st.markdown("### ✏️ Edit Word")
+            edit_words_action(search_text)
+    
+    st.markdown("---")
+    
+    # Display area
     if st.session_state.get('data'):
-        st.subheader("📊 Word List")
+        st.markdown("### 📊 Your Vocabulary Collection")
         display_data(st.session_state.data)
     elif st.session_state.get('search_results'):
-        st.subheader("🔍 Search Results")
+        st.markdown("### 🔍 Search Results")
         display_data(st.session_state.search_results)
     
-    # Sidebar with information
+    # Beautiful Sidebar
     with st.sidebar:
-        st.header("ℹ️ GitHub Database")
-        st.markdown(f"""
-        **Connected to your existing repository:**
-        - **Repository:** [{REPO_NAME}](https://github.com/{REPO_OWNER}/{REPO_NAME})
-        - **File:** [{FILE_PATH}]({RAW_CSV_URL})
-        - **Real-time synchronization**
-        - **Automatic version control**
+        st.markdown(create_gradient_text("📊 Dashboard", 24), unsafe_allow_html=True)
         
-        **All changes are saved directly to your GitHub repository!**
-        """)
-        
-        # Statistics
         if st.session_state.github_connected:
             try:
                 data = read_csv_data()
-                st.metric("Total Words in GitHub", len(data))
-                st.metric("New This Session", len(st.session_state.session_new_words))
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("📚 Total Words", len(data), delta=f"+{len(st.session_state.session_new_words)} new")
+                with col2:
+                    if data:
+                        latest = data[-1]['German'] if data else "None"
+                        st.metric("🆕 Latest Word", latest)
                 
-                # Show some file info
-                if data:
-                    latest_word = data[-1]['German'] if data else "None"
-                    st.write(f"**Latest word:** {latest_word}")
-                    
-            except Exception as e:
-                st.warning("Could not load data from GitHub")
+                # Progress bar for word count
+                word_count = len(data)
+                target = 1000
+                progress = min(word_count / target, 1.0)
+                st.progress(progress)
+                st.write(f"🎯 Progress: {word_count}/{target} words ({progress*100:.1f}%)")
+                
+            except:
+                st.warning("📡 Could not load data")
         else:
-            st.warning("Not connected to GitHub")
+            st.error("🔌 Not connected to GitHub")
+        
+        st.markdown("---")
+        st.markdown("### 🌟 Features")
+        st.markdown("""
+        - ✨ **Beautiful Interface**
+        - ☁️ **Cloud Sync**
+        - 🔍 **Smart Search**
+        - 📱 **Mobile Friendly**
+        - 🎨 **Colorful Design**
+        """)
+        
+        st.markdown("---")
+        st.markdown("### 🔗 Quick Links")
+        st.markdown(f"""
+        [📁 View on GitHub](https://github.com/{REPO_OWNER}/{REPO_NAME})
+        """)
 
 if __name__ == "__main__":
     main()
