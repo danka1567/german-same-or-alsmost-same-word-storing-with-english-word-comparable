@@ -1,30 +1,19 @@
+
 import streamlit as st
 import pandas as pd
 import os
 import re
 from datetime import datetime
 import time
-import gspread
-from google.oauth2.service_account import Credentials
+import requests
+import base64
+import json
 
-# Google Sheets API configuration
-SERVICE_ACCOUNT_INFO = {
-  "type": "service_account",
-  "project_id": "third-zephyr-451003-n6",
-  "private_key_id": "a6297f789b583aca63214f897b9315faa91b3595",
-  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvwIBADANBgkqhkiG9w0BAQEFAASCBKkwggSlAgEAAoIBAQC2O//Fz7h0PxQd\n1EwXmgYYvETZgDQLrPN2PWl22m6zs+HGQj/hY75xIvSd/YO44xLLed3IqS6u1e7h\nc67s1d8phgsGaLHYPoWCdhWVkEwisRvKE0AkxLO9UtV4bA8m0Eb0iHOvyLk+/h75\nwnIjyiOf6eatRCYMB/UUsBqKXedRGTegtD/thKVJNNdFir1TjOxx0AFxj4SXETdD\nfrWLxxelKURAEiGuxw3pzxyi2s1MRmoJ9AxEkjlboL2gBSPtwopIGqJyD0KD2Ig4\nYyMpdSIdyHMhi0xRGqKfEijVpwZMAAA54mbe4F4gFCCjk3kbNS6FY6xRyLguo7Xi\nq7IXKMcFAgMBAAECggEAB+7iupTJXd4lHQtR6LEe1NLVWHaZTWzRCHOx9KebrB0H\nlh7qMwCpmLlB1uLjahgQiGUcv5CF5LyRcqUbl1nUJjWco0HJhDVskHpdhC5M8jGt\nmQVvhGo/vN0vR9fEbRciD6ElECD314MujAbn+yDgniSLkz1lPp7WD3l/HkjqOgCA\n/hi+8nrct5TZN8IzzSxHg5NeVo/pLhQ9W1+CYTChdpCcMiWnq3Y6wlcfnCAMzd9h\nlHfSUzCA0mW4QWomnTmwAcs1uOpbeMfnzvIdSb4kUrC8fH4u5gr4U0C1ecIOqF0w\npyGXWDeAMLNI3JN/inc58p9TTa0/vEcg/xhBXpJx3QKBgQD87VB1FL9UZ9/ai3F4\nXZVZZSS4JIDuRI3TMOxdXHpQ0PtzO67dgYL2EiFpez990MqYdeRLvZvJJ4UdQ5pq\nhsobvZMf9y42ggO5Y3eyhe7nmyqAY4B1eC9u1Z6qC6bqUM9Vbfsk7pOyyVpGcSDT\nCRFon9pv7UgzGOYkIrmFQdx+lwKBgQC4cs6/KV2R/AVTLBukT2u2mHqpDJvBe8Be\nRluhnGkpmqfH+ecYpbFdVQrBIVso58VyTGu+dmDEeBMiGUMmkeyRC0XH63u09OBU\niv0vge07mh722XCO3Q7hwOx5z9/y2NZOtF9GFV8093rPtgy0blA9+BXwexB/7Ewg\nOJxDAxO2wwKBgQCJ54bn34EWr3BRg5hBzZzB2jD0KgsWXtCJZvJpUSPr7pY7VT5Z\nzeSu8GHBVo7etbnQ+O6aEW7gdajRtOt7y7Rk/a87TZWn6KnJKh+4eegx5dt9l0MS\nSY5rOxRAmQvQVHFHnijCEUb8w2ZyY/pGtnoEdqwuPM0R9zB8YWaP7sIfTwKBgQCd\nKaYkmHiURWu8HN9IuCuNoIsTtBybVnjpW4YERKQOwSqpaLSS+cwRPL83JNbqGeLR\nq3A7D98QSUf0TBY9rSUnybUhzfLQk776CpwFeO3NVVuA9nHEKXPexGY6vPeTk1O4\nKFTuAJPpK95HUlWtADn7M4JuME400gFjixkKuHp5xQKBgQDWX8xPDrKSGZDcQxjw\nvjNmsUBLl3Ss3Fe3pQp9K9xOueHsjqiWrW1a077HbX3QiLTawLw+azz85dIz86TP\nOnzVXDgdwaxkglr8HHoKnnUrTWF95J8u8IvAFQIc91GBngU7LSa1C4Epgccw/zYH\npZJMVBC6/LRCIcGdksLeyV42pQ==\n-----END PRIVATE KEY-----\n",
-  "client_email": "german-english-similar-or--775@third-zephyr-451003-n6.iam.gserviceaccount.com",
-  "client_id": "112189292366267497212",
-  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-  "token_uri": "https://oauth2.googleapis.com/token",
-  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
-  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/german-english-similar-or--775%40third-zephyr-451003-n6.iam.gserviceaccount.com",
-  "universe_domain": "googleapis.com"
-}
-
-# Google Sheets configuration
-SPREADSHEET_NAME = "German Words Database"
-WORKSHEET_NAME = "Words"
+# GitHub Configuration
+GITHUB_TOKEN = "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"
+REPO_OWNER = "your_username"  # Change this to your GitHub username
+REPO_NAME = "german-words-db"  # Change this to your repository name
+FILE_PATH = "similar or partial GERMAN english.csv"
 
 # Initialize session state variables
 if 'session_new_words' not in st.session_state:
@@ -33,100 +22,170 @@ if 'data' not in st.session_state:
     st.session_state.data = []
 if 'search_results' not in st.session_state:
     st.session_state.search_results = []
-if 'gsheets_connected' not in st.session_state:
-    st.session_state.gsheets_connected = False
-if 'spreadsheet_created' not in st.session_state:
-    st.session_state.spreadsheet_created = False
+if 'github_connected' not in st.session_state:
+    st.session_state.github_connected = False
 
-# ---------- Google Sheets Helper Functions ----------
+# ---------- GitHub Helper Functions ----------
 
-def get_google_sheets_client():
-    """Initialize and return Google Sheets client with error handling"""
+def get_github_headers():
+    """Get headers for GitHub API requests"""
+    return {
+        "Authorization": f"token {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+
+def check_repo_exists():
+    """Check if repository exists, create if it doesn't"""
+    url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}"
+    response = requests.get(url, headers=get_github_headers())
+    
+    if response.status_code == 404:
+        # Repository doesn't exist, create it
+        create_data = {
+            "name": REPO_NAME,
+            "description": "German Words Database",
+            "private": True,  # Make it private for security
+            "auto_init": True  # Initialize with README
+        }
+        create_response = requests.post(
+            "https://api.github.com/user/repos",
+            headers=get_github_headers(),
+            json=create_data
+        )
+        return create_response.status_code == 201
+    elif response.status_code == 200:
+        return True
+    else:
+        st.error(f"Error checking repository: {response.status_code}")
+        return False
+
+def check_file_exists():
+    """Check if the CSV file exists in the repository"""
+    url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/contents/{FILE_PATH}"
+    response = requests.get(url, headers=get_github_headers())
+    return response.status_code == 200
+
+def create_initial_file():
+    """Create initial CSV file with headers"""
+    headers = "German,English,DateAdded,DateObj\n"
+    content = base64.b64encode(headers.encode()).decode()
+    
+    data = {
+        "message": "Initialize German Words Database",
+        "content": content
+    }
+    
+    url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/contents/{FILE_PATH}"
+    response = requests.put(url, headers=get_github_headers(), json=data)
+    
+    return response.status_code == 201
+
+def initialize_github():
+    """Initialize GitHub connection and create necessary files"""
     try:
-        # Fix for Streamlit Cloud: Ensure proper key formatting
-        private_key = SERVICE_ACCOUNT_INFO['private_key'].replace('\\n', '\n')
+        # Check and create repository
+        if not check_repo_exists():
+            st.error("Failed to create repository")
+            return False
         
-        creds_info = SERVICE_ACCOUNT_INFO.copy()
-        creds_info['private_key'] = private_key
+        # Check and create file
+        if not check_file_exists():
+            if not create_initial_file():
+                st.error("Failed to create initial file")
+                return False
+            st.success("✅ Created new German Words database file")
         
-        creds = Credentials.from_service_account_info(creds_info)
-        scoped_creds = creds.with_scopes([
-            "https://www.googleapis.com/auth/spreadsheets",
-            "https://www.googleapis.com/auth/drive"
-        ])
-        client = gspread.authorize(scoped_creds)
-        
-        # Test the connection
-        client.list_spreadsheet_files()
-        st.session_state.gsheets_connected = True
-        return client
+        st.session_state.github_connected = True
+        return True
         
     except Exception as e:
-        st.session_state.gsheets_connected = False
-        st.error(f"❌ Google Sheets connection failed: {str(e)}")
-        st.info("""
-        **Troubleshooting steps:**
-        1. Ensure Google Sheets API and Google Drive API are enabled in Google Cloud Console
-        2. Check if the service account has editor access to the spreadsheet
-        3. Verify the spreadsheet 'German Words Database' exists and is shared with the service account email
-        """)
-        return None
+        st.error(f"GitHub initialization failed: {str(e)}")
+        return False
 
-def get_or_create_spreadsheet():
-    """Get existing spreadsheet or create a new one automatically"""
-    client = get_google_sheets_client()
-    if not client:
-        return None
+def read_csv_from_github():
+    """Read CSV data from GitHub"""
+    if not st.session_state.github_connected:
+        return []
     
     try:
-        # Try to open existing spreadsheet
-        spreadsheet = client.open(SPREADSHEET_NAME)
-        if not st.session_state.spreadsheet_created:
-            st.success(f"✅ Connected to existing spreadsheet: '{SPREADSHEET_NAME}'")
-        return spreadsheet
+        url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/contents/{FILE_PATH}"
+        response = requests.get(url, headers=get_github_headers())
         
-    except gspread.SpreadsheetNotFound:
-        try:
-            # Create new spreadsheet if it doesn't exist
-            with st.spinner(f"🔄 Creating new spreadsheet '{SPREADSHEET_NAME}'..."):
-                spreadsheet = client.create(SPREADSHEET_NAME)
-                # Share with the service account email for full access
-                spreadsheet.share(SERVICE_ACCOUNT_INFO['client_email'], perm_type='user', role='writer')
-                st.session_state.spreadsheet_created = True
-                st.success(f"✅ Successfully created new spreadsheet: '{SPREADSHEET_NAME}'")
-                st.info("📊 The spreadsheet has been automatically created in Google Drive")
-            return spreadsheet
-        except Exception as e:
-            st.error(f"❌ Failed to create spreadsheet: {str(e)}")
-            return None
+        if response.status_code != 200:
+            st.error(f"Failed to read file: {response.status_code}")
+            return []
+        
+        file_data = response.json()
+        content = base64.b64decode(file_data['content']).decode('utf-8')
+        
+        # Parse CSV content
+        data = []
+        lines = content.strip().split('\n')
+        if len(lines) <= 1:  # Only headers or empty
+            return []
+        
+        # Skip header row
+        for line in lines[1:]:
+            if not line.strip():
+                continue
+            parts = line.split(',')
+            if len(parts) >= 4:
+                data.append({
+                    'German': parts[0],
+                    'English': parts[1],
+                    'DateAdded': parts[2],
+                    'DateObj': parts[3]
+                })
+        
+        return data
+        
     except Exception as e:
-        st.error(f"❌ Error accessing spreadsheet: {str(e)}")
-        return None
+        st.error(f"Error reading from GitHub: {e}")
+        return []
 
-def get_worksheet():
-    """Get or create the worksheet automatically"""
-    spreadsheet = get_or_create_spreadsheet()
-    if not spreadsheet:
-        return None
+def write_csv_to_github(data):
+    """Write CSV data to GitHub"""
+    if not st.session_state.github_connected:
+        return False
     
     try:
-        worksheet = spreadsheet.worksheet(WORKSHEET_NAME)
-        return worksheet
-    except gspread.WorksheetNotFound:
-        try:
-            # Create worksheet with headers if it doesn't exist
-            with st.spinner(f"🔄 Creating worksheet '{WORKSHEET_NAME}'..."):
-                worksheet = spreadsheet.add_worksheet(WORKSHEET_NAME, rows=1000, cols=4)
-                worksheet.append_row(["German", "English", "DateAdded", "DateObj"])
-                st.success(f"✅ Created new worksheet: '{WORKSHEET_NAME}'")
-                st.info("📋 Worksheet has been created with proper headers")
-            return worksheet
-        except Exception as e:
-            st.error(f"❌ Failed to create worksheet: {str(e)}")
-            return None
+        # Get current file SHA (required for update)
+        url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/contents/{FILE_PATH}"
+        response = requests.get(url, headers=get_github_headers())
+        
+        if response.status_code != 200:
+            st.error("Failed to get file SHA")
+            return False
+        
+        file_data = response.json()
+        sha = file_data['sha']
+        
+        # Prepare CSV content
+        csv_content = "German,English,DateAdded,DateObj\n"
+        for item in data:
+            csv_content += f"{item['German']},{item['English']},{item['DateAdded']},{item['DateObj']}\n"
+        
+        # Encode content
+        content = base64.b64encode(csv_content.encode()).decode()
+        
+        # Update file
+        update_data = {
+            "message": f"Update German words database - {len(data)} words",
+            "content": content,
+            "sha": sha
+        }
+        
+        response = requests.put(url, headers=get_github_headers(), json=update_data)
+        
+        if response.status_code == 200:
+            return True
+        else:
+            st.error(f"Failed to update file: {response.status_code}")
+            return False
+            
     except Exception as e:
-        st.error(f"❌ Error accessing worksheet: {str(e)}")
-        return None
+        st.error(f"Error writing to GitHub: {e}")
+        return False
 
 # ---------- Data Operations ----------
 
@@ -197,51 +256,33 @@ def time_ago(past_time):
     return f"{ago} | {tod}"
 
 def load_existing_words():
-    """Load words from Google Sheets"""
-    if not st.session_state.gsheets_connected:
-        return {}
-    
-    worksheet = get_worksheet()
-    if not worksheet:
-        return {}
-    
+    """Load words from GitHub"""
+    data = read_csv_from_github()
     existing_words = {}
-    try:
-        records = worksheet.get_all_records()
-        for row in records:
-            if not row.get('German'):
-                continue
-            german = row['German']
-            english = row.get('English', '')
-            date_added = row.get('DateAdded', '')
-            date_obj_str = row.get('DateObj', '')
-            
-            try:
-                date_obj = datetime.strptime(date_obj_str, "%Y-%m-%d %H:%M:%S") if date_obj_str else datetime.now()
-            except:
-                date_obj = datetime.now()
-            
-            existing_words[german] = {
-                'English': english,
-                'DateAdded': date_added,
-                'DateObj': date_obj
-            }
-    except Exception as e:
-        st.error(f"Error loading words: {e}")
+    
+    for row in data:
+        german = row['German']
+        if not german:
+            continue
+        
+        date_obj_str = row.get('DateObj', '')
+        try:
+            date_obj = datetime.strptime(date_obj_str, "%Y-%m-%d %H:%M:%S") if date_obj_str else datetime.now()
+        except:
+            date_obj = datetime.now()
+        
+        existing_words[german] = {
+            'English': row.get('English', ''),
+            'DateAdded': row.get('DateAdded', ''),
+            'DateObj': date_obj
+        }
     
     return existing_words
 
 def save_word_pairs(pairs):
-    """Save word pairs to Google Sheets"""
-    if not st.session_state.gsheets_connected:
-        st.error("Not connected to Google Sheets")
-        return []
-    
-    worksheet = get_worksheet()
-    if not worksheet:
-        return []
-    
+    """Save word pairs to GitHub"""
     existing_words = load_existing_words()
+    current_data = read_csv_from_github()
     new_entries = []
     
     for german, english in pairs:
@@ -262,55 +303,21 @@ def save_word_pairs(pairs):
     if not new_entries:
         return []
     
-    # Append new entries to Google Sheets
-    try:
-        for entry in new_entries:
-            worksheet.append_row([
-                entry['German'],
-                entry['English'],
-                entry['DateAdded'],
-                entry['DateObj']
-            ])
+    # Add new entries to current data
+    updated_data = current_data + new_entries
+    
+    # Write back to GitHub
+    if write_csv_to_github(updated_data):
         return new_entries
-    except Exception as e:
-        st.error(f"Error saving to Google Sheets: {e}")
+    else:
         return []
 
 def read_csv_data():
-    """Read all data from Google Sheets"""
-    if not st.session_state.gsheets_connected:
-        return []
-    
-    worksheet = get_worksheet()
-    if not worksheet:
-        return []
-    
-    data = []
-    try:
-        records = worksheet.get_all_records()
-        for row in records:
-            if not row.get('German'):
-                continue
-            
-            date_obj_str = row.get('DateObj', '')
-            try:
-                date_obj = datetime.strptime(date_obj_str, "%Y-%m-%d %H:%M:%S") if date_obj_str else datetime.now()
-            except:
-                date_obj = datetime.now()
-            
-            data.append({
-                'German': row['German'],
-                'English': row.get('English', ''),
-                'DateAdded': row.get('DateAdded', ''),
-                'DateObj': date_obj
-            })
-    except Exception as e:
-        st.error(f"Error reading data: {e}")
-    
-    return data
+    """Read all data from GitHub"""
+    return read_csv_from_github()
 
 def search_words(words):
-    """Search for words in Google Sheets"""
+    """Search for words in GitHub"""
     existing_words = load_existing_words()
     results = []
     
@@ -331,70 +338,48 @@ def search_words(words):
     return results
 
 def delete_word_from_csv(word_or_index):
-    """Delete word from Google Sheets"""
-    if not st.session_state.gsheets_connected:
-        return False
+    """Delete word from GitHub"""
+    current_data = read_csv_from_github()
+    updated_data = []
+    deleted = False
     
-    worksheet = get_worksheet()
-    if not worksheet:
-        return False
+    for i, row in enumerate(current_data, start=1):
+        if (str(i) == str(word_or_index) or 
+            clean_word(row.get('German', '')) == clean_word(word_or_index) or 
+            clean_word(row.get('English', '')) == clean_word(word_or_index)):
+            deleted = True
+            continue
+        updated_data.append(row)
     
-    try:
-        records = worksheet.get_all_records()
-        updated_records = []
-        deleted = False
-        
-        for i, row in enumerate(records, start=2):
-            if (str(i-1) == str(word_or_index) or 
-                clean_word(row.get('German', '')) == clean_word(word_or_index) or 
-                clean_word(row.get('English', '')) == clean_word(word_or_index)):
-                deleted = True
-                continue
-            updated_records.append(row)
-        
-        if deleted:
-            # Clear worksheet and rewrite all records except deleted one
-            worksheet.clear()
-            worksheet.append_row(["German", "English", "DateAdded", "DateObj"])
-            for record in updated_records:
-                worksheet.append_row([
-                    record.get('German', ''),
-                    record.get('English', ''),
-                    record.get('DateAdded', ''),
-                    record.get('DateObj', '')
-                ])
-        
-        return deleted
-    except Exception as e:
-        st.error(f"Error deleting word: {e}")
-        return False
+    if deleted:
+        if write_csv_to_github(updated_data):
+            return True
+        else:
+            return False
+    
+    return deleted
 
 def edit_word_in_csv(search_word, new_german, new_english):
-    """Edit word in Google Sheets"""
-    if not st.session_state.gsheets_connected:
-        return False
+    """Edit word in GitHub"""
+    current_data = read_csv_from_github()
+    edited = False
     
-    worksheet = get_worksheet()
-    if not worksheet:
-        return False
+    for row in current_data:
+        if clean_word(row.get('German', '')) == clean_word(search_word):
+            if new_german:
+                row['German'] = clean_word(new_german)
+            if new_english:
+                row['English'] = clean_word(new_english)
+            edited = True
+            break
     
-    try:
-        records = worksheet.get_all_records()
-        edited = False
-        
-        for i, row in enumerate(records, start=2):
-            if clean_word(row.get('German', '')) == clean_word(search_word):
-                if new_german:
-                    worksheet.update_cell(i, 1, clean_word(new_german))
-                if new_english:
-                    worksheet.update_cell(i, 2, clean_word(new_english))
-                edited = True
-                break
-        
-        return edited
-    except Exception as e:
-        st.error(f"Error editing word: {e}")
-        return False
+    if edited:
+        if write_csv_to_github(current_data):
+            return True
+        else:
+            return False
+    
+    return edited
 
 # ---------- Streamlit UI Functions ----------
 
@@ -467,7 +452,7 @@ def save_words_action(input_text):
     
     new_entries = save_word_pairs(pairs)
     if new_entries:
-        st.success(f"✅ Successfully saved {len(new_entries)} new word pair(s) to Google Sheets!")
+        st.success(f"✅ Successfully saved {len(new_entries)} new word pair(s) to GitHub!")
         show_new_words()
     else:
         st.info("No new words were added (they might already exist).")
@@ -479,10 +464,10 @@ def delete_words_action(delete_text):
     
     deleted = delete_word_from_csv(delete_text)
     if deleted:
-        st.success(f"✅ '{delete_text}' deleted successfully from Google Sheets!")
+        st.success(f"✅ '{delete_text}' deleted successfully from GitHub!")
         show_all_words()
     else:
-        st.error(f"❌ '{delete_text}' not found in Google Sheets.")
+        st.error(f"❌ '{delete_text}' not found in GitHub database.")
 
 def edit_words_action(edit_text):
     if not edit_text.strip():
@@ -500,16 +485,16 @@ def edit_words_action(edit_text):
     if st.button("Confirm Edit", key="confirm_edit"):
         edited = edit_word_in_csv(edit_text, new_german.strip(), new_english.strip())
         if edited:
-            st.success(f"✅ '{edit_text}' edited successfully in Google Sheets!")
+            st.success(f"✅ '{edit_text}' edited successfully in GitHub!")
             show_all_words()
         else:
-            st.error(f"❌ '{edit_text}' not found in Google Sheets.")
+            st.error(f"❌ '{edit_text}' not found in GitHub database.")
 
 # ---------- Streamlit App Layout ----------
 
 def main():
     st.set_page_config(
-        page_title="German Words Manager - Google Sheets",
+        page_title="German Words Manager - GitHub",
         page_icon="🇩🇪",
         layout="wide",
         initial_sidebar_state="expanded"
@@ -526,28 +511,30 @@ def main():
         </style>
     """, unsafe_allow_html=True)
     
-    st.title("🇩🇪 German Words Manager - Google Sheets")
+    st.title("🇩🇪 German Words Manager - GitHub Database")
     
-    # Initialize connection on first load
-    if not st.session_state.gsheets_connected:
-        with st.spinner("🔗 Connecting to Google Sheets..."):
-            get_google_sheets_client()
+    # Initialize GitHub connection on first load
+    if not st.session_state.github_connected:
+        with st.spinner("🔗 Connecting to GitHub..."):
+            if initialize_github():
+                st.success("✅ Connected to GitHub successfully!")
+            else:
+                st.error("❌ Failed to connect to GitHub")
     
     # Connection status
-    if not st.session_state.gsheets_connected:
-        st.error("🔴 Not connected to Google Sheets")
+    if not st.session_state.github_connected:
+        st.error("🔴 Not connected to GitHub")
         st.info("""
-        **To fix connection issues:**
-        1. Ensure **Google Sheets API** and **Google Drive API** are enabled in Google Cloud Console
-        2. The app will automatically create the spreadsheet when you first use it
+        **Please check:**
+        1. GitHub token is valid
+        2. Repository name and owner are correct
+        3. You have internet connection
         """)
         
         if st.button("🔄 Retry Connection"):
             st.rerun()
     else:
-        st.success("🟢 Connected to Google Sheets")
-        if st.session_state.spreadsheet_created:
-            st.info("📊 Spreadsheet was automatically created - you can find it in your Google Drive")
+        st.success("🟢 Connected to GitHub Database")
     
     st.markdown("---")
     
@@ -564,7 +551,7 @@ def main():
     
     col1, col2, col3 = st.columns([1, 1, 2])
     with col1:
-        if st.button("💾 Save Words", use_container_width=True, disabled=not st.session_state.gsheets_connected):
+        if st.button("💾 Save Words", use_container_width=True, disabled=not st.session_state.github_connected):
             save_words_action(input_text)
     with col2:
         if st.button("🔄 Clear Input", use_container_width=True):
@@ -586,11 +573,11 @@ def main():
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        if st.button("🔍 Find Words", use_container_width=True, disabled=not st.session_state.gsheets_connected):
+        if st.button("🔍 Find Words", use_container_width=True, disabled=not st.session_state.github_connected):
             find_words(search_text)
     
     with col2:
-        if st.button("📋 Show All Words", use_container_width=True, disabled=not st.session_state.gsheets_connected):
+        if st.button("📋 Show All Words", use_container_width=True, disabled=not st.session_state.github_connected):
             show_all_words()
     
     with col3:
@@ -598,7 +585,7 @@ def main():
             show_new_words()
     
     with col4:
-        if st.button("🗑️ Delete Word", use_container_width=True, disabled=not st.session_state.gsheets_connected):
+        if st.button("🗑️ Delete Word", use_container_width=True, disabled=not st.session_state.github_connected):
             delete_words_action(search_text)
     
     # Edit section (appears when needed)
@@ -619,33 +606,29 @@ def main():
     
     # Sidebar with information
     with st.sidebar:
-        st.header("ℹ️ Automatic Setup")
+        st.header("ℹ️ GitHub Database")
         st.markdown("""
-        **This app automatically:**
-        - ✅ Creates spreadsheet if not found
-        - ✅ Creates worksheet with headers
-        - ✅ Sets up proper structure
-        - ✅ Shares with service account
+        **Features:**
+        - ✅ Automatic repository creation
+        - ✅ Automatic file initialization  
+        - ✅ Real-time GitHub synchronization
+        - ✅ Private repository for security
+        - ✅ No API limits to worry about
         
-        **No manual setup required!**
-        
-        Just use the app and everything will be created automatically in your Google Drive.
+        **Repository:** `german-words-db`
+        **File:** `similar or partial GERMAN english.csv`
         """)
         
         # Statistics
-        if st.session_state.gsheets_connected:
+        if st.session_state.github_connected:
             try:
                 data = read_csv_data()
-                st.metric("Total Words in Google Sheets", len(data))
+                st.metric("Total Words in GitHub", len(data))
                 st.metric("New This Session", len(st.session_state.session_new_words))
-                
-                if st.session_state.spreadsheet_created:
-                    st.success("✨ Spreadsheet created automatically!")
-                
             except:
-                st.warning("Could not load data from Google Sheets")
+                st.warning("Could not load data from GitHub")
         else:
-            st.warning("Not connected to Google Sheets")
+            st.warning("Not connected to GitHub")
 
 if __name__ == "__main__":
     main()
