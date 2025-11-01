@@ -1,12 +1,30 @@
 import streamlit as st
 import pandas as pd
 import os
-import csv
 import re
 from datetime import datetime
 import time
+import gspread
+from google.oauth2.service_account import Credentials
 
-file_name = r"C:\Users\un\Desktop\German Words\similar or partial GERMAN english.csv"
+# Google Sheets API configuration
+SERVICE_ACCOUNT_INFO = {
+  "type": "service_account",
+  "project_id": "third-zephyr-451003-n6",
+  "private_key_id": "a6297f789b583aca63214f897b9315faa91b3595",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvwIBADANBgkqhkiG9w0BAQEFAASCBKkwggSlAgEAAoIBAQC2O//Fz7h0PxQd\n1EwXmgYYvETZgDQLrPN2PWl22m6zs+HGQj/hY75xIvSd/YO44xLLed3IqS6u1e7h\nc67s1d8phgsGaLHYPoWCdhWVkEwisRvKE0AkxLO9UtV4bA8m0Eb0iHOvyLk+/h75\nwnIjyiOf6eatRCYMB/UUsBqKXedRGTegtD/thKVJNNdFir1TjOxx0AFxj4SXETdD\nfrWLxxelKURAEiGuxw3pzxyi2s1MRmoJ9AxEkjlboL2gBSPtwopIGqJyD0KD2Ig4\nYyMpdSIdyHMhi0xRGqKfEijVpwZMAAA54mbe4F4gFCCjk3kbNS6FY6xRyLguo7Xi\nq7IXKMcFAgMBAAECggEAB+7iupTJXd4lHQtR6LEe1NLVWHaZTWzRCHOx9KebrB0H\nlh7qMwCpmLlB1uLjahgQiGUcv5CF5LyRcqUbl1nUJjWco0HJhDVskHpdhC5M8jGt\nmQVvhGo/vN0vR9fEbRciD6ElECD314MujAbn+yDgniSLkz1lPp7WD3l/HkjqOgCA\n/hi+8nrct5TZN8IzzSxHg5NeVo/pLhQ9W1+CYTChdpCcMiWnq3Y6wlcfnCAMzd9h\nlHfSUzCA0mW4QWomnTmwAcs1uOpbeMfnzvIdSb4kUrC8fH4u5gr4U0C1ecIOqF0w\npyGXWDeAMLNI3JN/inc58p9TTa0/vEcg/xhBXpJx3QKBgQD87VB1FL9UZ9/ai3F4\nXZVZZSS4JIDuRI3TMOxdXHpQ0PtzO67dgYL2EiFpez990MqYdeRLvZvJJ4UdQ5pq\nhsobvZMf9y42ggO5Y3eyhe7nmyqAY4B1eC9u1Z6qC6bqUM9Vbfsk7pOyyVpGcSDT\nCRFon9pv7UgzGOYkIrmFQdx+lwKBgQC4cs6/KV2R/AVTLBukT2u2mHqpDJvBe8Be\nRluhnGkpmqfH+ecYpbFdVQrBIVso58VyTGu+dmDEeBMiGUMmkeyRC0XH63u09OBU\niv0vge07mh722XCO3Q7hwOx5z9/y2NZOtF9GFV8093rPtgy0blA9+BXwexB/7Ewg\nOJxDAxO2wwKBgQCJ54bn34EWr3BRg5hBzZzB2jD0KgsWXtCJZvJpUSPr7pY7VT5Z\nzeSu8GHBVo7etbnQ+O6aEW7gdajRtOt7y7Rk/a87TZWn6KnJKh+4eegx5dt9l0MS\nSY5rOxRAmQvQVHFHnijCEUb8w2ZyY/pGtnoEdqwuPM0R9zB8YWaP7sIfTwKBgQCd\nKaYkmHiURWu8HN9IuCuNoIsTtBybVnjpW4YERKQOwSqpaLSS+cwRPL83JNbqGeLR\nq3A7D98QSUf0TBY9rSUnybUhzfLQk776CpwFeO3NVVuA9nHEKXPexGY6vPeTk1O4\nKFTuAJPpK95HUlWtADn7M4JuME400gFjixkKuHp5xQKBgQDWX8xPDrKSGZDcQxjw\nvjNmsUBLl3Ss3Fe3pQp9K9xOueHsjqiWrW1a077HbX3QiLTawLw+azz85dIz86TP\nOnzVXDgdwaxkglr8HHoKnnUrTWF95J8u8IvAFQIc91GBngU7LSa1C4Epgccw/zYH\npZJMVBC6/LRCIcGdksLeyV42pQ==\n-----END PRIVATE KEY-----\n",
+  "client_email": "german-english-similar-or--775@third-zephyr-451003-n6.iam.gserviceaccount.com",
+  "client_id": "112189292366267497212",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/german-english-similar-or--775%40third-zephyr-451003-n6.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
+
+# Google Sheets configuration
+SPREADSHEET_NAME = "German Words Database"  # This should be the name of your Google Sheet
+WORKSHEET_NAME = "Words"  # Name of the worksheet/tab
 
 # Initialize session state variables
 if 'session_new_words' not in st.session_state:
@@ -16,7 +34,55 @@ if 'data' not in st.session_state:
 if 'search_results' not in st.session_state:
     st.session_state.search_results = []
 
-# ---------- Helper Functions ----------
+# ---------- Google Sheets Helper Functions ----------
+
+def get_google_sheets_client():
+    """Initialize and return Google Sheets client"""
+    try:
+        creds = Credentials.from_service_account_info(SERVICE_ACCOUNT_INFO)
+        scoped_creds = creds.with_scopes([
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ])
+        client = gspread.authorize(scoped_creds)
+        return client
+    except Exception as e:
+        st.error(f"Error connecting to Google Sheets: {e}")
+        return None
+
+def get_or_create_spreadsheet():
+    """Get existing spreadsheet or create a new one"""
+    client = get_google_sheets_client()
+    if not client:
+        return None
+    
+    try:
+        # Try to open existing spreadsheet
+        spreadsheet = client.open(SPREADSHEET_NAME)
+    except gspread.SpreadsheetNotFound:
+        # Create new spreadsheet if it doesn't exist
+        spreadsheet = client.create(SPREADSHEET_NAME)
+        # Share with the service account email for full access
+        spreadsheet.share(SERVICE_ACCOUNT_INFO['client_email'], perm_type='user', role='writer')
+    
+    return spreadsheet
+
+def get_worksheet():
+    """Get or create the worksheet"""
+    spreadsheet = get_or_create_spreadsheet()
+    if not spreadsheet:
+        return None
+    
+    try:
+        worksheet = spreadsheet.worksheet(WORKSHEET_NAME)
+    except gspread.WorksheetNotFound:
+        # Create worksheet with headers
+        worksheet = spreadsheet.add_worksheet(WORKSHEET_NAME, rows=1000, cols=4)
+        worksheet.append_row(["German", "English", "DateAdded", "DateObj"])
+    
+    return worksheet
+
+# ---------- Data Operations ----------
 
 def clean_word(word):
     word_clean = re.sub(r"[^a-zA-ZäöüÄÖÜß]", "", word)
@@ -60,6 +126,12 @@ def custom_timestamp():
     return timestamp_str, now
 
 def time_ago(past_time):
+    if isinstance(past_time, str):
+        try:
+            past_time = datetime.strptime(past_time, "%Y-%m-%d %H:%M:%S")
+        except:
+            return "Unknown time ago"
+    
     now = datetime.now()
     diff = now - past_time
     seconds = diff.total_seconds()
@@ -71,111 +143,118 @@ def time_ago(past_time):
         ago = f"{int(seconds//3600)} hours ago"
     else:
         ago = f"{int(seconds//86400)} days ago"
-    tod = get_time_of_day(past_time.hour, past_time.minute)
+    
+    if isinstance(past_time, datetime):
+        tod = get_time_of_day(past_time.hour, past_time.minute)
+    else:
+        tod = "Unknown"
     return f"{ago} | {tod}"
 
-def parse_dateadded_to_datetime(date_str):
-    try:
-        parts = date_str.split(":")
-        date_part = parts[0].strip()
-        time_part = parts[1].strip().split()[0]
-        am_pm = parts[1].strip().split()[1]
-        day, month_str, year = date_part.split()
-        months = ["jano","febo","maro","apro","maio","juno","julo","augo","sepo","octo","nove","deco"]
-        month = months.index(month_str) + 1
-        hour, minute = map(int, time_part.split(":"))
-        if am_pm.upper() == "PM" and hour != 12:
-            hour += 12
-        if am_pm.upper() == "AM" and hour == 12:
-            hour = 0
-        return datetime(int(year), month, int(day), hour, minute)
-    except:
-        return datetime.now()
-
 def load_existing_words():
-    if not os.path.exists(file_name):
+    """Load words from Google Sheets"""
+    worksheet = get_worksheet()
+    if not worksheet:
         return {}
+    
     existing_words = {}
-    with open(file_name, newline='', encoding='utf-8') as csvfile:
-        reader = csv.DictReader(csvfile)
-        for row in reader:
-            german = row.get('German') or row.get('Word')
-            english = row.get('English', "")
-            if not german:
+    try:
+        records = worksheet.get_all_records()
+        for row in records:
+            if not row.get('German'):
                 continue
-            if 'DateObj' in row and row['DateObj']:
-                dt = datetime.strptime(row['DateObj'], "%Y-%m-%d %H:%M:%S")
-            else:
-                dt = parse_dateadded_to_datetime(row['DateAdded'])
-            existing_words[german] = {'English': english, 'DateAdded': row['DateAdded'], 'DateObj': dt}
+            german = row['German']
+            english = row.get('English', '')
+            date_added = row.get('DateAdded', '')
+            date_obj_str = row.get('DateObj', '')
+            
+            try:
+                date_obj = datetime.strptime(date_obj_str, "%Y-%m-%d %H:%M:%S") if date_obj_str else datetime.now()
+            except:
+                date_obj = datetime.now()
+            
+            existing_words[german] = {
+                'English': english,
+                'DateAdded': date_added,
+                'DateObj': date_obj
+            }
+    except Exception as e:
+        st.error(f"Error loading words: {e}")
+    
     return existing_words
 
-def remove_duplicate_german_rows():
-    if not os.path.exists(file_name):
-        return
-    seen = set()
-    unique_rows = []
-    with open(file_name, newline='', encoding='utf-8') as csvfile:
-        reader = csv.DictReader(csvfile)
-        for row in reader:
-            g = row.get('German')
-            if g and g not in seen:
-                seen.add(g)
-                unique_rows.append(row)
-    with open(file_name, 'w', newline='', encoding='utf-8') as csvfile:
-        fieldnames = ['German', 'English', 'DateAdded', 'DateObj']
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(unique_rows)
-
 def save_word_pairs(pairs):
+    """Save word pairs to Google Sheets"""
+    worksheet = get_worksheet()
+    if not worksheet:
+        return []
+    
     existing_words = load_existing_words()
     new_entries = []
+    
     for german, english in pairs:
         g_clean = clean_word(german.strip())
         e_clean = clean_word(english.strip())
+        
         if g_clean and e_clean and g_clean not in existing_words:
             timestamp_str, dt_obj = custom_timestamp()
-            entry = {'German': g_clean, 'English': e_clean, 'DateAdded': timestamp_str, 'DateObj': dt_obj}
+            entry = {
+                'German': g_clean,
+                'English': e_clean,
+                'DateAdded': timestamp_str,
+                'DateObj': dt_obj.strftime("%Y-%m-%d %H:%M:%S")
+            }
             new_entries.append(entry)
             st.session_state.session_new_words.append(entry)
+    
     if not new_entries:
         return []
-    write_header = not os.path.exists(file_name)
-    with open(file_name, 'a', newline='', encoding='utf-8') as csvfile:
-        fieldnames = ['German', 'English', 'DateAdded', 'DateObj']
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        if write_header:
-            writer.writeheader()
-        for entry in new_entries:
-            writer.writerow({
-                'German': entry['German'],
-                'English': entry['English'],
-                'DateAdded': entry['DateAdded'],
-                'DateObj': entry['DateObj'].strftime("%Y-%m-%d %H:%M:%S")
-            })
-    remove_duplicate_german_rows()
+    
+    # Append new entries to Google Sheets
+    for entry in new_entries:
+        worksheet.append_row([
+            entry['German'],
+            entry['English'],
+            entry['DateAdded'],
+            entry['DateObj']
+        ])
+    
     return new_entries
 
 def read_csv_data():
-    if not os.path.exists(file_name):
+    """Read all data from Google Sheets"""
+    worksheet = get_worksheet()
+    if not worksheet:
         return []
+    
     data = []
-    with open(file_name, newline='', encoding='utf-8') as csvfile:
-        reader = csv.DictReader(csvfile)
-        for row in reader:
-            dt = datetime.strptime(row['DateObj'], "%Y-%m-%d %H:%M:%S") if 'DateObj' in row and row['DateObj'] else parse_dateadded_to_datetime(row['DateAdded'])
+    try:
+        records = worksheet.get_all_records()
+        for row in records:
+            if not row.get('German'):
+                continue
+            
+            date_obj_str = row.get('DateObj', '')
+            try:
+                date_obj = datetime.strptime(date_obj_str, "%Y-%m-%d %H:%M:%S") if date_obj_str else datetime.now()
+            except:
+                date_obj = datetime.now()
+            
             data.append({
-                'German': row.get('German') or row.get('Word'),
+                'German': row['German'],
                 'English': row.get('English', ''),
-                'DateAdded': row['DateAdded'],
-                'DateObj': dt
+                'DateAdded': row.get('DateAdded', ''),
+                'DateObj': date_obj
             })
+    except Exception as e:
+        st.error(f"Error reading data: {e}")
+    
     return data
 
 def search_words(words):
+    """Search for words in Google Sheets"""
     existing_words = load_existing_words()
     results = []
+    
     for word in words:
         clean = clean_word(word.strip())
         if clean:
@@ -189,51 +268,68 @@ def search_words(words):
                 })
             else:
                 results.append({'German': clean, 'English': '', 'DateAdded': "Not Found", 'TimeAgo': ""})
+    
     return results
 
 def delete_word_from_csv(word_or_index):
-    if not os.path.exists(file_name):
+    """Delete word from Google Sheets"""
+    worksheet = get_worksheet()
+    if not worksheet:
         return False
-    rows = []
-    deleted = False
-    with open(file_name, newline='', encoding='utf-8') as csvfile:
-        reader = list(csv.DictReader(csvfile))
-        for i, row in enumerate(reader, start=1):
-            if (str(i) == str(word_or_index)) or (clean_word(row['German']) == clean_word(word_or_index)) or (clean_word(row['English']) == clean_word(word_or_index)):
+    
+    try:
+        records = worksheet.get_all_records()
+        updated_records = []
+        deleted = False
+        
+        for i, row in enumerate(records, start=2):  # start=2 because of header row
+            if (str(i-1) == str(word_or_index) or 
+                clean_word(row.get('German', '')) == clean_word(word_or_index) or 
+                clean_word(row.get('English', '')) == clean_word(word_or_index)):
                 deleted = True
                 continue
-            rows.append(row)
-    if deleted:
-        with open(file_name, 'w', newline='', encoding='utf-8') as csvfile:
-            fieldnames = ['German', 'English', 'DateAdded', 'DateObj']
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-            writer.writeheader()
-            writer.writerows(rows)
-    return deleted
+            updated_records.append(row)
+        
+        if deleted:
+            # Clear worksheet and rewrite all records except deleted one
+            worksheet.clear()
+            worksheet.append_row(["German", "English", "DateAdded", "DateObj"])
+            for record in updated_records:
+                worksheet.append_row([
+                    record.get('German', ''),
+                    record.get('English', ''),
+                    record.get('DateAdded', ''),
+                    record.get('DateObj', '')
+                ])
+        
+        return deleted
+    except Exception as e:
+        st.error(f"Error deleting word: {e}")
+        return False
 
 def edit_word_in_csv(search_word, new_german, new_english):
-    if not os.path.exists(file_name):
+    """Edit word in Google Sheets"""
+    worksheet = get_worksheet()
+    if not worksheet:
         return False
-    rows = []
-    edited = False
-    with open(file_name, newline='', encoding='utf-8') as csvfile:
-        reader = list(csv.DictReader(csvfile))
-        for row in reader:
-            if clean_word(row['German']) == clean_word(search_word):
+    
+    try:
+        records = worksheet.get_all_records()
+        edited = False
+        
+        for i, row in enumerate(records, start=2):  # start=2 because of header row
+            if clean_word(row.get('German', '')) == clean_word(search_word):
                 if new_german:
-                    row['German'] = clean_word(new_german)
+                    worksheet.update_cell(i, 1, clean_word(new_german))
                 if new_english:
-                    row['English'] = clean_word(new_english)
+                    worksheet.update_cell(i, 2, clean_word(new_english))
                 edited = True
-            rows.append(row)
-    if edited:
-        remove_duplicate_german_rows()
-        with open(file_name, 'w', newline='', encoding='utf-8') as csvfile:
-            fieldnames = ['German', 'English', 'DateAdded', 'DateObj']
-            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-            writer.writeheader()
-            writer.writerows(rows)
-    return edited
+                break
+        
+        return edited
+    except Exception as e:
+        st.error(f"Error editing word: {e}")
+        return False
 
 # ---------- Streamlit UI Functions ----------
 
@@ -306,7 +402,7 @@ def save_words_action(input_text):
     
     new_entries = save_word_pairs(pairs)
     if new_entries:
-        st.success(f"✅ Successfully saved {len(new_entries)} new word pair(s)!")
+        st.success(f"✅ Successfully saved {len(new_entries)} new word pair(s) to Google Sheets!")
         show_new_words()
     else:
         st.info("No new words were added (they might already exist).")
@@ -318,10 +414,10 @@ def delete_words_action(delete_text):
     
     deleted = delete_word_from_csv(delete_text)
     if deleted:
-        st.success(f"✅ '{delete_text}' deleted successfully!")
+        st.success(f"✅ '{delete_text}' deleted successfully from Google Sheets!")
         show_all_words()
     else:
-        st.error(f"❌ '{delete_text}' not found in CSV file.")
+        st.error(f"❌ '{delete_text}' not found in Google Sheets.")
 
 def edit_words_action(edit_text):
     if not edit_text.strip():
@@ -339,16 +435,16 @@ def edit_words_action(edit_text):
     if st.button("Confirm Edit", key="confirm_edit"):
         edited = edit_word_in_csv(edit_text, new_german.strip(), new_english.strip())
         if edited:
-            st.success(f"✅ '{edit_text}' edited successfully!")
+            st.success(f"✅ '{edit_text}' edited successfully in Google Sheets!")
             show_all_words()
         else:
-            st.error(f"❌ '{edit_text}' not found in CSV file.")
+            st.error(f"❌ '{edit_text}' not found in Google Sheets.")
 
 # ---------- Streamlit App Layout ----------
 
 def main():
     st.set_page_config(
-        page_title="Unique German Words Manager",
+        page_title="German Words Manager - Google Sheets",
         page_icon="🇩🇪",
         layout="wide",
         initial_sidebar_state="expanded"
@@ -365,7 +461,7 @@ def main():
         </style>
     """, unsafe_allow_html=True)
     
-    st.title("🇩🇪 Unique German Words Manager")
+    st.title("🇩🇪 German Words Manager - Google Sheets")
     st.markdown("---")
     
     # Section 1: Add New Words
@@ -444,19 +540,19 @@ def main():
         - **Edit**: Enter a German word, then provide new values
         - **Delete**: Enter a German word or row number to delete
         
-        **File location:**
-        ```python
-        {file_name}
-        ```
-        """.format(file_name=file_name))
+        **Database:**
+        - Google Sheets (Cloud Storage)
+        - Real-time updates
+        - Automatic backup
+        """)
         
         # Statistics
-        if os.path.exists(file_name):
+        try:
             data = read_csv_data()
-            st.metric("Total Words", len(data))
+            st.metric("Total Words in Google Sheets", len(data))
             st.metric("New This Session", len(st.session_state.session_new_words))
-        else:
-            st.warning("CSV file does not exist yet.")
+        except:
+            st.warning("Could not connect to Google Sheets")
 
 if __name__ == "__main__":
     main()
