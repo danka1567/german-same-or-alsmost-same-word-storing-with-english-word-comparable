@@ -23,8 +23,8 @@ SERVICE_ACCOUNT_INFO = {
 }
 
 # Google Sheets configuration
-SPREADSHEET_NAME = "German Words Database"  # This should be the name of your Google Sheet
-WORKSHEET_NAME = "Words"  # Name of the worksheet/tab
+SPREADSHEET_NAME = "German Words Database"
+WORKSHEET_NAME = "Words"
 
 # Initialize session state variables
 if 'session_new_words' not in st.session_state:
@@ -33,21 +33,41 @@ if 'data' not in st.session_state:
     st.session_state.data = []
 if 'search_results' not in st.session_state:
     st.session_state.search_results = []
+if 'gsheets_connected' not in st.session_state:
+    st.session_state.gsheets_connected = False
 
 # ---------- Google Sheets Helper Functions ----------
 
 def get_google_sheets_client():
-    """Initialize and return Google Sheets client"""
+    """Initialize and return Google Sheets client with error handling"""
     try:
-        creds = Credentials.from_service_account_info(SERVICE_ACCOUNT_INFO)
+        # Fix for Streamlit Cloud: Ensure proper key formatting
+        private_key = SERVICE_ACCOUNT_INFO['private_key'].replace('\\n', '\n')
+        
+        creds_info = SERVICE_ACCOUNT_INFO.copy()
+        creds_info['private_key'] = private_key
+        
+        creds = Credentials.from_service_account_info(creds_info)
         scoped_creds = creds.with_scopes([
             "https://www.googleapis.com/auth/spreadsheets",
             "https://www.googleapis.com/auth/drive"
         ])
         client = gspread.authorize(scoped_creds)
+        
+        # Test the connection
+        client.list_spreadsheet_files()
+        st.session_state.gsheets_connected = True
         return client
+        
     except Exception as e:
-        st.error(f"Error connecting to Google Sheets: {e}")
+        st.session_state.gsheets_connected = False
+        st.error(f"❌ Google Sheets connection failed: {str(e)}")
+        st.info("""
+        **Troubleshooting steps:**
+        1. Ensure Google Sheets API and Google Drive API are enabled in Google Cloud Console
+        2. Check if the service account has editor access to the spreadsheet
+        3. Verify the spreadsheet 'German Words Database' exists and is shared with the service account email
+        """)
         return None
 
 def get_or_create_spreadsheet():
@@ -59,13 +79,23 @@ def get_or_create_spreadsheet():
     try:
         # Try to open existing spreadsheet
         spreadsheet = client.open(SPREADSHEET_NAME)
+        st.success(f"✅ Connected to existing spreadsheet: {SPREADSHEET_NAME}")
+        return spreadsheet
+        
     except gspread.SpreadsheetNotFound:
-        # Create new spreadsheet if it doesn't exist
-        spreadsheet = client.create(SPREADSHEET_NAME)
-        # Share with the service account email for full access
-        spreadsheet.share(SERVICE_ACCOUNT_INFO['client_email'], perm_type='user', role='writer')
-    
-    return spreadsheet
+        try:
+            # Create new spreadsheet if it doesn't exist
+            spreadsheet = client.create(SPREADSHEET_NAME)
+            # Share with the service account email for full access
+            spreadsheet.share(SERVICE_ACCOUNT_INFO['client_email'], perm_type='user', role='writer')
+            st.success(f"✅ Created new spreadsheet: {SPREADSHEET_NAME}")
+            return spreadsheet
+        except Exception as e:
+            st.error(f"❌ Failed to create spreadsheet: {str(e)}")
+            return None
+    except Exception as e:
+        st.error(f"❌ Error accessing spreadsheet: {str(e)}")
+        return None
 
 def get_worksheet():
     """Get or create the worksheet"""
@@ -75,12 +105,20 @@ def get_worksheet():
     
     try:
         worksheet = spreadsheet.worksheet(WORKSHEET_NAME)
+        return worksheet
     except gspread.WorksheetNotFound:
-        # Create worksheet with headers
-        worksheet = spreadsheet.add_worksheet(WORKSHEET_NAME, rows=1000, cols=4)
-        worksheet.append_row(["German", "English", "DateAdded", "DateObj"])
-    
-    return worksheet
+        try:
+            # Create worksheet with headers
+            worksheet = spreadsheet.add_worksheet(WORKSHEET_NAME, rows=1000, cols=4)
+            worksheet.append_row(["German", "English", "DateAdded", "DateObj"])
+            st.success(f"✅ Created new worksheet: {WORKSHEET_NAME}")
+            return worksheet
+        except Exception as e:
+            st.error(f"❌ Failed to create worksheet: {str(e)}")
+            return None
+    except Exception as e:
+        st.error(f"❌ Error accessing worksheet: {str(e)}")
+        return None
 
 # ---------- Data Operations ----------
 
@@ -152,6 +190,9 @@ def time_ago(past_time):
 
 def load_existing_words():
     """Load words from Google Sheets"""
+    if not st.session_state.gsheets_connected:
+        return {}
+    
     worksheet = get_worksheet()
     if not worksheet:
         return {}
@@ -184,6 +225,10 @@ def load_existing_words():
 
 def save_word_pairs(pairs):
     """Save word pairs to Google Sheets"""
+    if not st.session_state.gsheets_connected:
+        st.error("Not connected to Google Sheets")
+        return []
+    
     worksheet = get_worksheet()
     if not worksheet:
         return []
@@ -210,18 +255,24 @@ def save_word_pairs(pairs):
         return []
     
     # Append new entries to Google Sheets
-    for entry in new_entries:
-        worksheet.append_row([
-            entry['German'],
-            entry['English'],
-            entry['DateAdded'],
-            entry['DateObj']
-        ])
-    
-    return new_entries
+    try:
+        for entry in new_entries:
+            worksheet.append_row([
+                entry['German'],
+                entry['English'],
+                entry['DateAdded'],
+                entry['DateObj']
+            ])
+        return new_entries
+    except Exception as e:
+        st.error(f"Error saving to Google Sheets: {e}")
+        return []
 
 def read_csv_data():
     """Read all data from Google Sheets"""
+    if not st.session_state.gsheets_connected:
+        return []
+    
     worksheet = get_worksheet()
     if not worksheet:
         return []
@@ -273,6 +324,9 @@ def search_words(words):
 
 def delete_word_from_csv(word_or_index):
     """Delete word from Google Sheets"""
+    if not st.session_state.gsheets_connected:
+        return False
+    
     worksheet = get_worksheet()
     if not worksheet:
         return False
@@ -282,7 +336,7 @@ def delete_word_from_csv(word_or_index):
         updated_records = []
         deleted = False
         
-        for i, row in enumerate(records, start=2):  # start=2 because of header row
+        for i, row in enumerate(records, start=2):
             if (str(i-1) == str(word_or_index) or 
                 clean_word(row.get('German', '')) == clean_word(word_or_index) or 
                 clean_word(row.get('English', '')) == clean_word(word_or_index)):
@@ -309,6 +363,9 @@ def delete_word_from_csv(word_or_index):
 
 def edit_word_in_csv(search_word, new_german, new_english):
     """Edit word in Google Sheets"""
+    if not st.session_state.gsheets_connected:
+        return False
+    
     worksheet = get_worksheet()
     if not worksheet:
         return False
@@ -317,7 +374,7 @@ def edit_word_in_csv(search_word, new_german, new_english):
         records = worksheet.get_all_records()
         edited = False
         
-        for i, row in enumerate(records, start=2):  # start=2 because of header row
+        for i, row in enumerate(records, start=2):
             if clean_word(row.get('German', '')) == clean_word(search_word):
                 if new_german:
                     worksheet.update_cell(i, 1, clean_word(new_german))
@@ -462,6 +519,16 @@ def main():
     """, unsafe_allow_html=True)
     
     st.title("🇩🇪 German Words Manager - Google Sheets")
+    
+    # Connection status
+    if not st.session_state.gsheets_connected:
+        st.warning("🔴 Not connected to Google Sheets")
+        if st.button("🔄 Try to Connect"):
+            get_google_sheets_client()
+            st.rerun()
+    else:
+        st.success("🟢 Connected to Google Sheets")
+    
     st.markdown("---")
     
     # Section 1: Add New Words
@@ -477,7 +544,7 @@ def main():
     
     col1, col2, col3 = st.columns([1, 1, 2])
     with col1:
-        if st.button("💾 Save Words", use_container_width=True):
+        if st.button("💾 Save Words", use_container_width=True, disabled=not st.session_state.gsheets_connected):
             save_words_action(input_text)
     with col2:
         if st.button("🔄 Clear Input", use_container_width=True):
@@ -499,11 +566,11 @@ def main():
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        if st.button("🔍 Find Words", use_container_width=True):
+        if st.button("🔍 Find Words", use_container_width=True, disabled=not st.session_state.gsheets_connected):
             find_words(search_text)
     
     with col2:
-        if st.button("📋 Show All Words", use_container_width=True):
+        if st.button("📋 Show All Words", use_container_width=True, disabled=not st.session_state.gsheets_connected):
             show_all_words()
     
     with col3:
@@ -511,7 +578,7 @@ def main():
             show_new_words()
     
     with col4:
-        if st.button("🗑️ Delete Word", use_container_width=True):
+        if st.button("🗑️ Delete Word", use_container_width=True, disabled=not st.session_state.gsheets_connected):
             delete_words_action(search_text)
     
     # Edit section (appears when needed)
@@ -532,27 +599,35 @@ def main():
     
     # Sidebar with information
     with st.sidebar:
-        st.header("ℹ️ Information")
+        st.header("ℹ️ Setup Instructions")
         st.markdown("""
-        **How to use:**
-        - **Add words**: Enter German-English pairs separated by spaces or commas
-        - **Search**: Enter one or more German words to search
-        - **Edit**: Enter a German word, then provide new values
-        - **Delete**: Enter a German word or row number to delete
+        **To fix connection issues:**
         
-        **Database:**
-        - Google Sheets (Cloud Storage)
-        - Real-time updates
-        - Automatic backup
+        1. **Enable APIs in Google Cloud Console:**
+           - Go to [Google Cloud Console](https://console.cloud.google.com/)
+           - Enable **Google Sheets API** and **Google Drive API**
+        
+        2. **Create and share spreadsheet:**
+           - Create a Google Sheet named **'German Words Database'**
+           - Share it with this email: 
+           `german-english-similar-or--775@third-zephyr-451003-n6.iam.gserviceaccount.com`
+           - Give **Editor** permissions
+        
+        3. **Check service account:**
+           - Ensure the service account is active
+           - Verify the private key is correct
         """)
         
         # Statistics
-        try:
-            data = read_csv_data()
-            st.metric("Total Words in Google Sheets", len(data))
-            st.metric("New This Session", len(st.session_state.session_new_words))
-        except:
-            st.warning("Could not connect to Google Sheets")
+        if st.session_state.gsheets_connected:
+            try:
+                data = read_csv_data()
+                st.metric("Total Words in Google Sheets", len(data))
+                st.metric("New This Session", len(st.session_state.session_new_words))
+            except:
+                st.warning("Could not load data from Google Sheets")
+        else:
+            st.warning("Not connected to Google Sheets")
 
 if __name__ == "__main__":
     main()
